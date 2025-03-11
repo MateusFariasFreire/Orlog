@@ -3,66 +3,72 @@ using UnityEngine;
 
 public class Die : MonoBehaviour
 {
-    public enum DieFace { NotStopped, Attack, Shield, DivineEnergy, Adoration, Drain, Affliction }
-    private readonly DieFace[] faces = { DieFace.Attack, DieFace.Shield, DieFace.DivineEnergy, DieFace.Adoration, DieFace.Drain, DieFace.Affliction };
+    public enum DieFace { NotStopped, Axe1, Axe2, Shield, Helmet, Arrow, Steal }
+
+    private readonly DieFace[] faces = {
+        DieFace.Axe1, DieFace.Axe2, DieFace.Shield,
+        DieFace.Helmet, DieFace.Arrow, DieFace.Steal
+    };
+
+    private Vector3 _oldPos;
+    public Vector3 OldPos { get => _oldPos; set => _oldPos = value; }
+
+    private Quaternion _oldRot;
+    public Quaternion OldRot { get => _oldRot; set => _oldRot = value; }
+
+    private bool _isSelected = false;
+    public bool IsSelected { get => _isSelected; set => _isSelected = value; }
+
+    private Dictionary<DieFace, Quaternion> faceUpDictionnary = new Dictionary<DieFace, Quaternion>()
+    {
+        { DieFace.Steal,  Quaternion.Euler(0, 0, 0) },        // top
+        { DieFace.Helmet, Quaternion.Euler(-90, 0, 0) },      // bottom
+        { DieFace.Axe1,   Quaternion.Euler(0, 0, -90) },      // right
+        { DieFace.Axe2,   Quaternion.Euler(0, 0, 90) },       // left
+        { DieFace.Arrow,  Quaternion.Euler(180, 0, 0) },      // back
+        { DieFace.Shield, Quaternion.Euler(90, 0, 0) }        // front
+    };
 
     void Start()
     {
+        _oldPos = transform.position;
+        _oldRot = transform.rotation;
     }
 
-    public DieFace GetDieUpwardFace()
+    public DieFace GetFaceUp()
     {
         Rigidbody rb = GetComponent<Rigidbody>();
 
         if (rb.linearVelocity.magnitude > 0.1f || rb.angularVelocity.magnitude > 0.1f)
             return DieFace.NotStopped;
 
-        return GetFaceUp();
-    }
-
-    private bool isSelected = false; // Etat de sélection du dé
-
-    // Méthode pour marquer le dé comme sélectionné ou non
-    public void SetSelected(bool selected)
-    {
-        isSelected = selected;
-        // Par exemple, on peut changer la couleur du dé pour indiquer qu'il est sélectionné
-        GetComponent<Renderer>().material.color = isSelected ? Color.green : Color.white; // Change la couleur
-    }
-
-    public bool IsSelected()
-    {
-        return isSelected;
-    }
-
-    private DieFace GetFaceUp()
-    {
-        Transform t = transform;
-
-        Vector3 up = Vector3.up;
-
+        DieFace bestFace = DieFace.NotStopped;
         float maxDot = -1f;
-        int faceIndex = -1;
 
-        Vector3[] directions = {
-        t.forward,    // face 0
-        t.up,         // face 1
-        t.right,      // face 2
-        -t.forward,   // face 3
-        -t.up,        // face 4
-        -t.right      // face 5
-    };
-
-        for (int i = 0; i < directions.Length; i++)
+        foreach (var pair in faceUpDictionnary)
         {
-            float dot = Vector3.Dot(directions[i], up);
+            Vector3 faceDirection = transform.rotation * (Quaternion.Inverse(pair.Value) * Vector3.up);
+            float dot = Vector3.Dot(Vector3.up, faceDirection);
+
             if (dot > maxDot)
             {
                 maxDot = dot;
-                faceIndex = i;
+                bestFace = pair.Key;
             }
         }
 
-        return faces[faceIndex];
+        return bestFace;
+    }
+
+    public void SetFaceUp(DieFace face)
+    {
+        if (faceUpDictionnary.TryGetValue(face, out Quaternion rotation))
+        {
+            transform.rotation = rotation;
+        }
+        else
+        {
+            Debug.LogWarning("Face non trouvée dans faceRotations.");
+        }
     }
 }

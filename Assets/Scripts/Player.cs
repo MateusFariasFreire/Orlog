@@ -1,122 +1,148 @@
-using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
-using System.Net.Mime;
+using UnityEngine.InputSystem;
 using UnityEngine;
 
 public class Player : MonoBehaviour
 {
     private GameManager gameManager;
 
-    private bool finishedTurn = false;
+    private List<GameObject> _dice = new List<GameObject>();
+    [SerializeField] private GameObject _diePrefab;
+    [SerializeField] private Transform _dieThrowPos;
 
+    [SerializeField] List<GameObject> _selectedDice = new List<GameObject>();
+    [SerializeField] private Transform _selectedDiePos;
 
-    private List<GameObject> dice = new List<GameObject>();
-
-    [SerializeField] private GameObject diePrefab;
-    [SerializeField] private Transform diceSpawnPos;
-
+    private List<Vector3> initialPositions = new List<Vector3>();
     private int nbOfThrows = 0;
+    [SerializeField] int maxNbOfThrows = 3;
+    private bool CanThrow => nbOfThrows < maxNbOfThrows ? true : false;
+    [SerializeField] private float throwShakeThreshold = 9f;
+
 
     private void Start()
     {
         gameManager = GameManager.GetInstance();
 
+
         for (int i = 0; i < 6; i++)
         {
-            GameObject die = Instantiate(diePrefab);
+            GameObject die = Instantiate(_diePrefab);
             die.transform.SetParent(transform, false);
-            die.SetActive(false); // On le désactive
-            dice.Add(die);
+            die.SetActive(false);
+            _dice.Add(die);
+            initialPositions.Add(die.transform.position);
         }
     }
-
-
 
     void Update()
     {
-        if (!finishedTurn)
+        switch (gameManager.CurrentGamePhase)
         {
-            switch (gameManager.CurrentGamePhase)
-            {
-                case GamePhase.WAITINGFORTHROW:
-                    nbOfThrows = 0;
-                    if (Input.GetKeyDown(KeyCode.Space))
+            case GamePhase.WAITINGFORTHROW:
+                nbOfThrows = 0;
+                if (IsShakeDetected())
+                {
+                    gameManager.SetCurrentGamePhase(GamePhase.DICETHROWING);
+                    ThrowDice();
+                }
+                break;
+
+            case GamePhase.DICETHROWING:
+                if (AllDiceStopped())
+                {
+                    if (CanThrow)
                     {
-                        gameManager.SetCurrentGamePhase(GamePhase.DICETHROWING);
-                        ThrowDice();
+                        gameManager.SetCurrentGamePhase(GamePhase.DICESELECTION);
                     }
-                    break;
-
-
-                case GamePhase.DICETHROWING:
-                    if (AllDiceStopped())
+                    else
                     {
-                        if (nbOfThrows < 3)
-                        {
-                            gameManager.SetCurrentGamePhase(GamePhase.DICESELECTION);
-                        }
-                        else
-                        {
-                            gameManager.SetCurrentGamePhase(GamePhase.DICERESOLVING);
-                        }
+                        ArrangeDice(_dice);
+                        gameManager.SetCurrentGamePhase(GamePhase.DICERESOLVING);
                     }
-                    break;
+                }
+                break;
 
+            case GamePhase.DICESELECTION:
+                if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.wasPressedThisFrame)
+                {
+                    HandleDiceSelection();
+                }
+                if (IsShakeDetected() && CanThrow)
+                {
+                    gameManager.SetCurrentGamePhase(GamePhase.DICETHROWING);
+                    ThrowDice();
+                }
+                break;
 
-                case GamePhase.DICESELECTION:
-                    if (IsTouching())
-                    {
-                        HandleDiceSelection();
-                    }
-                    break;
-            }
+            case GamePhase.DICERESOLVING:
+                break;
         }
     }
 
-    private bool IsTouching()
-    {
-        if (Input.touchCount > 0) // Vérifie si l'utilisateur touche l'écran
-        {
-            Touch touch = Input.GetTouch(0); // On prend le premier touch
-            Ray ray = Camera.main.ScreenPointToRay(touch.position); // Crée un ray à partir de la position du touch
-            RaycastHit hit;
 
-            if (Physics.Raycast(ray, out hit)) // Si le raycast touche un objet
-            {
-                if (hit.collider.CompareTag("Die")) // Vérifie si l'objet touché est un dé
-                {
-                    return true;
-                }
-            }
-        }
-        return false;
+    private bool IsShakeDetected()
+    {
+        if (Accelerometer.current == null) return false;
+
+        Vector3 acceleration = Accelerometer.current.acceleration.ReadValue();
+        return acceleration.sqrMagnitude > throwShakeThreshold;
     }
 
     private void HandleDiceSelection()
     {
-        foreach (GameObject die in dice)
+        if (!Touchscreen.current.primaryTouch.press.isPressed)
         {
-            // Vérifie si le dé est touché et sélectionne-le
-            if (die.activeSelf && IsTouchingDie(die))
+            return;
+        }
+
+        Vector2 touchPos = Touchscreen.current.primaryTouch.position.ReadValue();
+        Ray ray = Camera.main.ScreenPointToRay(touchPos);
+
+        if (Physics.Raycast(ray, out RaycastHit hit))
+        {
+            GameObject hitObject = hit.collider.gameObject;
+
+            if (_dice.Contains(hitObject))
             {
-                // Garde le dé et empêche de le relancer
-                die.GetComponent<Die>().SetSelected(true);
-            }
-            else
-            {
-                // Relance les autres dés
-                die.GetComponent<Die>().SetSelected(false);
+                Die dieComponent = hitObject.GetComponent<Die>();
+                bool isNowSelected = !dieComponent.IsSelected;
+                dieComponent.IsSelected = isNowSelected;
+
+                if (isNowSelected)
+                {
+                    dieComponent.OldPos= hitObject.transform.position;
+                    dieComponent.OldRot = hitObject.transform.rotation;
+                    _selectedDice.Add(hitObject);
+                }
+                else
+                {
+                    hitObject.transform.SetPositionAndRotation(dieComponent.OldPos, dieComponent.OldRot);
+                    _selectedDice.Remove(hitObject);
+                }
+
+                ArrangeDice(_selectedDice);
             }
         }
-    }
-    private bool IsTouchingDie(GameObject die)
-    {
-        Vector3 screenPos = Camera.main.WorldToScreenPoint(die.transform.position);
-        Rect dieRect = new Rect(screenPos.x - die.GetComponent<Renderer>().bounds.size.x / 2, screenPos.y - die.GetComponent<Renderer>().bounds.size.y / 2, die.GetComponent<Renderer>().bounds.size.x, die.GetComponent<Renderer>().bounds.size.y);
 
-        return dieRect.Contains(Input.GetTouch(0).position); // Vérifie si le touch est dans le rectangle du dé
     }
+
+    private void ArrangeDice(List<GameObject> dice)
+    {
+        float spacing = 1.7f;
+
+        for (int i = 0; i < dice.Count; i++)
+        {
+            GameObject die = dice[i];
+
+            die.GetComponent<Rigidbody>().isKinematic = true;
+            Vector3 targetPosition = _selectedDiePos.position + new Vector3(i * spacing, 0f, 0f);
+            die.transform.position = targetPosition;
+            Die dieComponent = die.GetComponent<Die>();
+            dieComponent.SetFaceUp(dieComponent.GetFaceUp());
+        }
+    }
+
 
 
 
@@ -124,19 +150,23 @@ public class Player : MonoBehaviour
     {
         nbOfThrows++;
 
-        foreach (GameObject die in dice)
+        foreach (GameObject die in _dice)
         {
             if (!die.activeSelf)
-            {
                 die.SetActive(true);
-            }
 
+            if (die.GetComponent<Die>().IsSelected)
+                continue;
+
+            die.GetComponent<Rigidbody>().isKinematic = false;
+
+            // Définir la position et la rotation aléatoires pour le lancer
             float randomX = Random.Range(-1.3f, 1.3f);
             float randomZ = Random.Range(-1.3f, 1.3f);
             float offsetX = Random.Range(-0.2f, 0.2f);
             float offsetZ = Random.Range(-0.2f, 0.2f);
 
-            Vector3 randomPos = new Vector3(randomX + offsetX, diceSpawnPos.position.y, randomZ + offsetZ);
+            Vector3 randomPos = new Vector3(randomX + offsetX, _dieThrowPos.position.y, randomZ + offsetZ);
             Quaternion randomRot = Quaternion.Euler(Random.Range(0f, 360f), Random.Range(0f, 360f), Random.Range(0f, 360f));
             Vector3 randomAngularVelocity = new Vector3(Random.Range(-10f, 10f), Random.Range(-10f, 10f), Random.Range(-10f, 10f));
 
@@ -144,21 +174,20 @@ public class Player : MonoBehaviour
             die.transform.rotation = randomRot;
 
             Rigidbody rb = die.GetComponent<Rigidbody>();
-            rb.linearVelocity = Vector3.zero; // reset old motion
+            rb.linearVelocity = Vector3.zero;
             rb.angularVelocity = randomAngularVelocity;
         }
     }
 
     private bool AllDiceStopped()
     {
-        foreach (GameObject dice in dice)
+        foreach (GameObject die in _dice)
         {
-            if (dice.GetComponent<Die>().GetDieUpwardFace() == Die.DieFace.NotStopped)
+            if (die.GetComponent<Die>().GetFaceUp() == Die.DieFace.NotStopped)
             {
                 return false;
             }
         }
-
         return true;
     }
 }
