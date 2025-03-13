@@ -1,28 +1,39 @@
 using System.Collections.Generic;
 using UnityEngine.InputSystem;
 using UnityEngine;
+using UnityEngine.Rendering;
+using System.Collections;
+using TMPro;
 
 public class Player : MonoBehaviour
 {
-    private GameManager gameManager;
+    private GameManager _gameManager;
 
     private List<GameObject> _dice = new List<GameObject>();
     [SerializeField] private GameObject _diePrefab;
     [SerializeField] private Transform _dieThrowPos;
 
-    [SerializeField] List<GameObject> _selectedDice = new List<GameObject>();
+    List<GameObject> _selectedDice = new List<GameObject>();
     [SerializeField] private Transform _selectedDiePos;
 
-    private List<Vector3> initialPositions = new List<Vector3>();
-    private int nbOfThrows = 0;
-    [SerializeField] int maxNbOfThrows = 3;
-    private bool CanThrow => nbOfThrows < maxNbOfThrows ? true : false;
+    private int _nbOfThrows = 0;
+    [SerializeField] private int _maxNbOfThrows = 3;
+    private bool CanThrow => _nbOfThrows < _maxNbOfThrows;
     [SerializeField] private float throwShakeThreshold = 9f;
+
+
+     private int _healthPoints = 15;
+    private int _godFavorToken = 0;
+     private int _shield = 0;
+    private int _helmet = 0;
+
+    [SerializeField] TMP_Text _healthPointText;
+    [SerializeField] TMP_Text _godFavorTokenText;
 
 
     private void Start()
     {
-        gameManager = GameManager.GetInstance();
+        _gameManager = GameManager.GetInstance();
 
 
         for (int i = 0; i < 6; i++)
@@ -31,19 +42,25 @@ public class Player : MonoBehaviour
             die.transform.SetParent(transform, false);
             die.SetActive(false);
             _dice.Add(die);
-            initialPositions.Add(die.transform.position);
         }
+
+        _healthPointText.SetText(_healthPoints.ToString());
+        _godFavorTokenText.SetText(_godFavorToken.ToString());
     }
 
     void Update()
     {
-        switch (gameManager.CurrentGamePhase)
+        if (_gameManager.CurrentPlayer != this)
+        {
+            return;
+        }
+
+        switch (_gameManager.CurrentGamePhase)
         {
             case GamePhase.WAITINGFORTHROW:
-                nbOfThrows = 0;
-                if (IsShakeDetected())
+                if (ShakeDetected())
                 {
-                    gameManager.SetCurrentGamePhase(GamePhase.DICETHROWING);
+                    _gameManager.SetCurrentGamePhase(GamePhase.DICETHROWING);
                     ThrowDice();
                 }
                 break;
@@ -53,35 +70,99 @@ public class Player : MonoBehaviour
                 {
                     if (CanThrow)
                     {
-                        gameManager.SetCurrentGamePhase(GamePhase.DICESELECTION);
+                        _gameManager.SetCurrentGamePhase(GamePhase.DICESELECTION);
                     }
                     else
                     {
                         ArrangeDice(_dice);
-                        gameManager.SetCurrentGamePhase(GamePhase.DICERESOLVING);
+                        _gameManager.SetCurrentGamePhase(GamePhase.DICERESOLVING);
                     }
                 }
                 break;
 
             case GamePhase.DICESELECTION:
-                if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.wasPressedThisFrame)
+
+                if (AllDiceSelected() || !CanThrow)
                 {
-                    HandleDiceSelection();
+                    ArrangeDice(_dice);
+                    _gameManager.SetCurrentGamePhase(GamePhase.DICERESOLVING);
                 }
-                if (IsShakeDetected() && CanThrow)
+                else
                 {
-                    gameManager.SetCurrentGamePhase(GamePhase.DICETHROWING);
-                    ThrowDice();
+                    if (ShakeDetected())
+                    {
+                        _gameManager.SetCurrentGamePhase(GamePhase.DICETHROWING);
+                        ThrowDice();
+                    }
+
+                    if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.wasPressedThisFrame)
+                    {
+                        HandleDiceSelection();
+                    }
                 }
                 break;
 
             case GamePhase.DICERESOLVING:
+
+                ResolveDice();
+                _gameManager.EndTurn();
+
                 break;
         }
     }
 
+    private void ResolveDice()
+    {
+        List<GameObject> activeDice = new List<GameObject>();
 
-    private bool IsShakeDetected()
+        foreach (GameObject die in _dice)
+        {
+            if (die.activeSelf)
+            {
+                activeDice.Add(die);
+            }
+        }
+
+        foreach (GameObject die in activeDice)
+        {
+            Die dieComponent = die.GetComponent<Die>();
+
+            switch (dieComponent.GetFaceUp())
+            {
+                case Die.DieFace.Axe1:
+                case Die.DieFace.Axe2:
+                    _gameManager.AttackMelee();
+                    die.SetActive(false);
+                    ArrangeDice(_dice);
+                    break;
+
+                case Die.DieFace.Helmet:
+                    AddHelmet();
+                    AddGodFavorToken();
+                    break;
+
+                case Die.DieFace.Arrow:
+                    _gameManager.AttackRange();
+                    die.SetActive(false);
+                    ArrangeDice(_dice);
+                    break;
+
+                case Die.DieFace.Shield:
+                    AddShield();
+                    AddGodFavorToken();
+                    break;
+
+                case Die.DieFace.Steal:
+                    _gameManager.Steal();
+                    die.SetActive(false);
+                    ArrangeDice(_dice);
+                    break;
+            }
+        }
+    }
+
+
+    private bool ShakeDetected()
     {
         if (Accelerometer.current == null) return false;
 
@@ -111,7 +192,7 @@ public class Player : MonoBehaviour
 
                 if (isNowSelected)
                 {
-                    dieComponent.OldPos= hitObject.transform.position;
+                    dieComponent.OldPos = hitObject.transform.position;
                     dieComponent.OldRot = hitObject.transform.rotation;
                     _selectedDice.Add(hitObject);
                 }
@@ -131,13 +212,28 @@ public class Player : MonoBehaviour
     {
         float spacing = 1.7f;
 
-        for (int i = 0; i < dice.Count; i++)
+        // On récupère uniquement les dés actifs
+        List<GameObject> activeDice = new List<GameObject>();
+        foreach (GameObject die in dice)
         {
-            GameObject die = dice[i];
+            if (die.activeSelf)
+            {
+                activeDice.Add(die);
+            }
+        }
+
+        // Calcule la direction vers la droite selon la rotation du joueur
+        Vector3 rightDirection = _selectedDiePos.right; // Vers la droite selon la rotation du transform
+
+        for (int i = 0; i < activeDice.Count; i++)
+        {
+            GameObject die = activeDice[i];
 
             die.GetComponent<Rigidbody>().isKinematic = true;
-            Vector3 targetPosition = _selectedDiePos.position + new Vector3(i * spacing, 0f, 0f);
+
+            Vector3 targetPosition = _selectedDiePos.position + rightDirection * (i * spacing);
             die.transform.position = targetPosition;
+
             Die dieComponent = die.GetComponent<Die>();
             dieComponent.SetFaceUp(dieComponent.GetFaceUp());
         }
@@ -146,9 +242,10 @@ public class Player : MonoBehaviour
 
 
 
+
     private void ThrowDice()
     {
-        nbOfThrows++;
+        _nbOfThrows++;
 
         foreach (GameObject die in _dice)
         {
@@ -189,5 +286,89 @@ public class Player : MonoBehaviour
             }
         }
         return true;
+    }
+
+    private bool AllDiceSelected()
+    {
+        foreach (GameObject die in _dice)
+        {
+            if (!die.GetComponent<Die>().IsSelected)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public bool AttackMelee()
+    {
+        if (_helmet > 0)
+        {
+            _helmet--;
+        }
+        else
+        {
+            _healthPoints--;
+            _healthPointText.SetText(_healthPoints.ToString());
+        }
+
+        return _healthPoints <= 0;
+
+    }
+
+    public bool AttackRange()
+    {
+        if (_shield > 0)
+        {
+            _shield--;
+        }
+        else
+        {
+            _healthPoints--;
+            _healthPointText.SetText(_healthPoints.ToString());
+        }
+
+        return _healthPoints <= 0;
+    }
+
+    public void AddGodFavorToken()
+    {
+        _godFavorToken++;
+        _godFavorTokenText.SetText(_godFavorToken.ToString());
+    }
+
+    public void AddHelmet()
+    {
+        _helmet++;
+    }
+
+    public void AddShield()
+    {
+        _shield++;
+    }
+
+    public bool Steal()
+    {
+        if (_godFavorToken > 0)
+        {
+            _godFavorToken--;
+            _godFavorTokenText.SetText(_godFavorToken.ToString());
+            return true;
+        }
+        return false;
+    }
+
+    public void StartNewTurn()
+    {
+        foreach (GameObject die in _dice)
+        {
+            die.SetActive(false);
+            die.GetComponent<Rigidbody>().isKinematic = false;
+            die.GetComponent<Die>().IsSelected = false;
+            _selectedDice.Clear();
+            _helmet = 0;
+            _shield = 0;
+            _nbOfThrows = 0;
+        }
     }
 }

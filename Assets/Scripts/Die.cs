@@ -16,7 +16,7 @@ public class Die : MonoBehaviour
     private Quaternion _oldRot;
     public Quaternion OldRot { get => _oldRot; set => _oldRot = value; }
 
-    private bool _isSelected = false;
+    [SerializeField] private bool _isSelected = false;
     public bool IsSelected { get => _isSelected; set => _isSelected = value; }
 
     private Dictionary<DieFace, Quaternion> faceUpDictionnary = new Dictionary<DieFace, Quaternion>()
