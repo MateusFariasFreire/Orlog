@@ -3,12 +3,7 @@ using UnityEngine;
 
 public class Die : MonoBehaviour
 {
-    public enum DieFace { NotStopped, Axe1, Axe2, Shield, Helmet, Arrow, Steal }
-
-    private readonly DieFace[] faces = {
-        DieFace.Axe1, DieFace.Axe2, DieFace.Shield,
-        DieFace.Helmet, DieFace.Arrow, DieFace.Steal
-    };
+    public enum DieFace { NotStopped = 0, Axe1, Axe2, Arrow, Shield, Helmet,  Steal }
 
     private Vector3 _oldPos;
     public Vector3 OldPos { get => _oldPos; set => _oldPos = value; }
