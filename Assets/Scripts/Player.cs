@@ -6,7 +6,6 @@ using System.Collections;
 using TMPro;
 using UnityEngine.UI;
 using System.Linq;
-using UnityEditor.ShaderGraph.Internal;
 
 public class Player : MonoBehaviour
 {

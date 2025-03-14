@@ -16,12 +16,12 @@ public class Die : MonoBehaviour
 
     private Dictionary<DieFace, Quaternion> faceUpDictionnary = new Dictionary<DieFace, Quaternion>()
     {
-        { DieFace.Steal,  Quaternion.Euler(0, 0, 0) },        // top
-        { DieFace.Helmet, Quaternion.Euler(-90, 0, 0) },      // bottom
-        { DieFace.Axe1,   Quaternion.Euler(0, 0, -90) },      // right
-        { DieFace.Axe2,   Quaternion.Euler(0, 0, 90) },       // left
-        { DieFace.Arrow,  Quaternion.Euler(180, 0, 0) },      // back
-        { DieFace.Shield, Quaternion.Euler(90, 0, 0) }        // front
+        { DieFace.Steal,  Quaternion.Euler(0, 0, 0) },       
+        { DieFace.Helmet, Quaternion.Euler(-90, 0, 0) },      
+        { DieFace.Axe1,   Quaternion.Euler(0, 0, -90) },      
+        { DieFace.Axe2,   Quaternion.Euler(0, 0, 90) },       
+        { DieFace.Arrow,  Quaternion.Euler(180, 0, 0) },      
+        { DieFace.Shield, Quaternion.Euler(90, 0, 0) }        
     };
 
     void Start()
